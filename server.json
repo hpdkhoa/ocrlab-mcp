@@ -1,0 +1,33 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.hpdkhoa/ocrlab-mcp",
+  "title": "OCR Lab",
+  "description": "Scanned documents read: a PDF page's text layer, else Tesseract OCR, with word boxes and confidence",
+  "version": "0.1.0",
+  "repository": {
+    "url": "https://github.com/hpdkhoa/ocrlab-mcp",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "ocrlab-mcp",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "OCRLAB_OUT",
+          "description": "The only folder OCR Lab writes to (its page cache); defaults to ~/.ocrlab",
+          "isRequired": false
+        },
+        {
+          "name": "OCRLAB_TESSERACT",
+          "description": "The path to tesseract when it is not on the PATH or in the usual install folders",
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}
