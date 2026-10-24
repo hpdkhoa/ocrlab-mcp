@@ -32,6 +32,16 @@ OCR Lab writes only to `OCRLAB_OUT` (default `~/.ocrlab`): its cache of read pag
 | `find` | Every line matching a regular expression, with its page, box and the lines round it. |
 | `words_in` | The words inside a box on a page: one column of a table read on its own. |
 | `read_image` | An image file read by Tesseract. |
+| `line_fit` | How far an outline (px) sits off a drawing's lines: mean, 95th percentile, largest miss, share on a line. |
+| `line_follow` | A rough outline laid onto a drawing's lines as one line, with its fit before and after and a picture. |
+
+## Lines in drawings
+
+`pip install ocrlab-mcp[lines]` adds a line reader for line art and photos. `line_follow` moves each point of a
+rough outline only along its own normal and picks all the moves together (dynamic programming round the closed
+outline), each point on a line's middle and neighbours moving alike. An outline therefore stays on one line: it does not
+jump to an inner line and back, and does not slide along a line. Its picture shows each point green on a line and
+red off it, so a miss is seen, not hidden.
 
 ## Command line
 

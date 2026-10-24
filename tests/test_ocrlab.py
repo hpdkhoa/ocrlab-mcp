@@ -79,3 +79,29 @@ def test_ocr_reads_a_scan(pdfs):
     assert "8.593" in [x["text"] for x in w] and "Weight" not in [x["text"] for x in w]
     again = R.page(str(scan), 1, dpi=300)            # from the cache
     assert again["text"] == p["text"]
+
+
+def test_lines_follow_lands_on_a_drawn_box(tmp_path):
+    cv2 = pytest.importorskip("cv2")
+    import numpy as np
+    from ocrlab import lines as L
+    img = np.full((200, 300), 255, np.uint8)
+    cv2.rectangle(img, (60, 50), (240, 150), 0, 3)                 # the part's line
+    cv2.line(img, (60, 70), (240, 70), 0, 3)                         # an inner line 20 px below its top
+    rough = [[52, 58], [248, 44], [246, 158], [55, 141]]             # a crude reading, up to 8 px off
+    r = L.follow(img, rough, picture=str(tmp_path / "f.png"))
+    assert r["fit_before"]["p95_px"] > 4
+    assert r["fit_after"]["p95_px"] <= 1.5
+    ys = [p[1] for p in L.dense(r["outline_px"], 1.0) if 80 < p[0] < 220]
+    assert min(ys) < 53 and max(ys) > 147                           # on the box, not on the inner line
+    assert (tmp_path / "f.png").exists()
+
+
+def test_lines_fit_counts_a_miss():
+    cv2 = pytest.importorskip("cv2")
+    import numpy as np
+    from ocrlab import lines as L
+    img = np.full((100, 100), 255, np.uint8)
+    cv2.rectangle(img, (20, 20), (80, 80), 0, 1)
+    assert L.fit(img, [[20, 20], [80, 20], [80, 80], [20, 80]])["p95_px"] <= 1.0
+    assert L.fit(img, [[25, 25], [75, 25], [75, 75], [25, 75]])["mean_px"] >= 4.0

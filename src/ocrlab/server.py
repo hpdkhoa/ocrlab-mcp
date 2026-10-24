@@ -5,14 +5,15 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import Field
 
-from . import __version__, read as R
+from . import __version__, lines as L, read as R
 
 mcp = MCPServer("ocrlab", title="OCR Lab", version=__version__, instructions=(
     "OCR Lab reads the text of scanned documents. A PDF page with a text layer is read from it; a page without one "
     "is rendered and read by Tesseract. Every line and word comes with its box on the page (PDF points from the top "
     "left) and, when read by OCR, a confidence from 0 to 100. Start with pdf_info, then find a label (find) or read "
     "a page (read_page); read a table's column alone with words_in. OCR misreads: check a number on the page picture "
-    "before you rely on it."))
+    "before you rely on it. For drawings: line_fit says how far an outline sits off the picture's lines, line_follow "
+    "lays a rough outline onto them as one line."))
 
 
 def _err(f, *a, **k):
@@ -72,6 +73,24 @@ def read_image(path: str, psm: int = 3, lang: str = "eng") -> dict:
     """An image file read by Tesseract: its lines (boxes in pixels) and their confidence."""
     words, lines = _err(R.ocr_image, path, lang=lang, psm=psm)
     return {"text": "\n".join(l_["text"] for l_ in lines), "lines": lines, "words": len(words)}
+
+
+@mcp.tool()
+def line_fit(path: str, outline: Annotated[list[list[float]], Field(description="a closed outline, [[x, y], ...] in px")],
+             mode: Annotated[str, Field(description="auto, lines (line art) or photo")] = "auto") -> dict:
+    """How far a closed outline sits off the picture's lines: each point's distance to the nearest line's middle,
+    every 1 px along it (mean, 95th percentile, largest, share within 1.5 px)."""
+    return _err(L.fit, path, outline, mode=mode)
+
+
+@mcp.tool()
+def line_follow(path: str, outline: Annotated[list[list[float]], Field(description="a rough closed outline, [[x, y], ...] in px")],
+                radius_px: Annotated[float, Field(description="how far a point may move along its normal")] = 16,
+                smooth: Annotated[float, Field(description="the price of 1 px of difference between neighbours")] = 0.6,
+                mode: str = "auto", picture: Annotated[str | None, Field(description="a path for the picture")] = None) -> dict:
+    """A rough outline laid onto the picture's lines as one line: each point moves only along its normal, all moves
+    chosen together, so it cannot jump to an inner line. The outline, its fit before and after, and a picture."""
+    return _err(L.follow, path, outline, radius_px=radius_px, smooth=smooth, mode=mode, picture=picture)
 
 
 def main():

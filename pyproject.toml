@@ -4,14 +4,14 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ocrlab-mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "An MCP server that reads scanned documents: a PDF page's text layer when it has one, Tesseract OCR when it has not, every word with its box on the page and its confidence."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Khoa Hoang" }]
 requires-python = ">=3.10"
-keywords = ["mcp", "ocr", "tesseract", "pdf", "scans", "documents"]
+keywords = ["mcp", "ocr", "tesseract", "pdf", "scans", "documents", "line art", "tracing"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -20,6 +20,9 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Image Recognition",
 ]
 dependencies = ["mcp>=2.0,<3", "pymupdf>=1.24"]
+
+[project.optional-dependencies]
+lines = ["opencv-python>=4.8", "numpy>=1.24"]
 
 [project.urls]
 Homepage = "https://github.com/hpdkhoa/ocrlab-mcp"
