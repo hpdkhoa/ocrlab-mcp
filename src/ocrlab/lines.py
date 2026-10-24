@@ -144,13 +144,72 @@ def _once(cost, rough, radius_px, step_px, smooth, cap_px=12.0):
     return Q + sh[:, None] * N
 
 
+def _cross(a, b, c, d):
+    """Where segments ab and cd cross (not at shared ends), else None."""
+    r = (b[0] - a[0], b[1] - a[1])
+    q = (d[0] - c[0], d[1] - c[1])
+    den = r[0] * q[1] - r[1] * q[0]
+    if abs(den) < 1e-12:
+        return None
+    t = ((c[0] - a[0]) * q[1] - (c[1] - a[1]) * q[0]) / den
+    u = ((c[0] - a[0]) * r[1] - (c[1] - a[1]) * r[0]) / den
+    if 1e-9 < t < 1 - 1e-9 and 1e-9 < u < 1 - 1e-9:
+        return (a[0] + t * r[0], a[1] + t * r[1])
+    return None
+
+
+def _area(pts):
+    return 0.5 * sum(p[0] * q[1] - q[0] * p[1] for p, q in zip(pts, pts[1:] + pts[:1]))
+
+
+def crossings(pts):
+    """How many times a closed outline crosses itself."""
+    n, c = len(pts), 0
+    for i in range(n):
+        for j in range(i + 2, n):
+            if i == 0 and j == n - 1:
+                continue
+            if _cross(pts[i], pts[(i + 1) % n], pts[j], pts[(j + 1) % n]):
+                c += 1
+    return c
+
+
+def untangle(pts, max_loops=200):
+    """A closed outline made simple: at each place it crosses itself the loop between the two crossing edges is cut
+    off at the crossing point, and the larger of the two parts kept (a follower's small loop between close lines goes,
+    the outline stays). A solid's cap needs a simple outline. Returns the outline and how many loops went."""
+    pts = [tuple(map(float, p)) for p in pts]
+    cut = 0
+    while cut < max_loops:
+        n, hit = len(pts), None
+        for i in range(n):
+            for j in range(i + 2, n):
+                if i == 0 and j == n - 1:
+                    continue
+                x = _cross(pts[i], pts[(i + 1) % n], pts[j], pts[(j + 1) % n])
+                if x:
+                    hit = (i, j, x)
+                    break
+            if hit:
+                break
+        if not hit:
+            break
+        i, j, x = hit
+        outer = pts[:i + 1] + [x] + pts[j + 1:]
+        loop = [x] + pts[i + 1:j + 1]
+        pts = outer if abs(_area(outer)) >= abs(_area(loop)) else loop
+        cut += 1
+    return [list(p) for p in pts], cut
+
+
 def follow(image, rough_px, radius_px=16, step_px=2, eps_px=0.5, smooth=0.6, passes=2, fine_px=6, mode="auto",
            threshold=None, picture=None, label=None, edge_pct=94.0, low=0.35, cap_px=12.0):
     """A rough closed outline (px) laid onto the picture's lines as one line. Points step_px apart each move only
     along their own normal (up to radius_px, in 0.5 px steps); the moves are chosen together so every point lands on
     a line's middle while neighbours move alike (smooth: the price of 1 px of difference); a place more than cap_px
     from any line costs no more than cap_px, so a stretch with no line in reach stays as read. Later passes start
-    from the last result and search fine_px. Gives the outline, its fit before and after, and, with picture (a path), the
+    from the last result and search fine_px. The result is made simple (untangle): a solid built from it needs an
+    outline that does not cross itself. Gives the outline, its fit before and after, and, with picture (a path), the
     picture: the rough outline grey, the result green where within 1.5 px of a line and red where not."""
     cv2, np = _cv()
     cost, mode = line_map(image, mode, threshold, edge_pct, low)
@@ -161,8 +220,9 @@ def follow(image, rough_px, radius_px=16, step_px=2, eps_px=0.5, smooth=0.6, pas
     for _ in range(max(1, passes)):
         Q = _once(cost, rough if Q is None else [tuple(q) for q in Q], radius_px if Q is None else fine_px, step_px, smooth, cap_px)
     poly = cv2.approxPolyDP(Q.astype(np.float32).reshape(-1, 1, 2), eps_px, True)[:, 0, :]
-    poly = [[round(float(x), 2), round(float(y), 2)] for x, y in poly]
-    out = {"outline_px": poly, "points": len(poly), "mode": mode, "passes": passes,
+    poly, loops = untangle([[float(x), float(y)] for x, y in poly])
+    poly = [[round(x, 2), round(y, 2)] for x, y in poly]
+    out = {"outline_px": poly, "points": len(poly), "mode": mode, "passes": passes, "loops_cut": loops,
            "area_px": float(abs(cv2.contourArea(Q.astype(np.float32)))),
            "fit_before": fit(image, rough, cost=cost), "fit_after": fit(image, poly, cost=cost)}
     a0 = abs(cv2.contourArea(np.asarray(rough, dtype=np.float32)))

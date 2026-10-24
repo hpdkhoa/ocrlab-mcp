@@ -105,3 +105,12 @@ def test_lines_fit_counts_a_miss():
     cv2.rectangle(img, (20, 20), (80, 80), 0, 1)
     assert L.fit(img, [[20, 20], [80, 20], [80, 80], [20, 80]])["p95_px"] <= 1.0
     assert L.fit(img, [[25, 25], [75, 25], [75, 75], [25, 75]])["mean_px"] >= 4.0
+
+
+def test_untangle_cuts_a_loop():
+    from ocrlab import lines as L
+    bow = [[0, 0], [10, 0], [10, 10], [12, 12], [14, 10], [12, 8], [10, 10.5], [0, 10]]   # a small loop near a corner
+    assert L.crossings(bow) >= 1
+    out, cut = L.untangle(bow)
+    assert cut >= 1 and L.crossings(out) == 0
+    assert abs(L._area(out)) > 90                      # the box stays, the loop goes

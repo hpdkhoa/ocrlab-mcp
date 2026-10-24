@@ -7,6 +7,8 @@
   lines (mean, 95th percentile, largest, share within 1.5 px). `follow`: a rough outline laid onto the lines as one
   line: each point moves only along its normal, all moves chosen together by dynamic programming round the closed
   outline, then a sub-pixel step; a picture colours each point by its miss.
+* `follow` returns a simple outline: `untangle` cuts each loop off at its crossing and keeps the larger part (a
+  solid built from a crossing outline is broken). `crossings` counts them.
 * Tools: `line_fit`, `line_follow`.
 * Photos are read at their strong edges: Canny on the gradient, its high threshold at the 94th percentile, weak edges
   kept where they join a strong one. The follower's cost is capped at 12 px, so a stretch with no line in reach stays
