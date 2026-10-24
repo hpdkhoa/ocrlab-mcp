@@ -38,9 +38,9 @@ def _color(image):
     return cv2.cvtColor(a, cv2.COLOR_GRAY2BGR) if a.ndim == 2 else a
 
 
-def line_map(image, mode="auto", threshold=None, edge_pct=94.0, low=0.35):
+def line_map(image, mode="auto", threshold=None, edge_pct=94.0, low=0.35, thick_px=3.0):
     """The picture's lines as a cost map (px to the nearest line's middle) and the mode used. mode "lines" (line
-    art: the ridge of the ink, its middle), "photo" (the strong edges: Canny with its high threshold at the
+    art: the ridge of the ink, its middle; where the ink is thicker than thick_px, a filled shape, its boundary), "photo" (the strong edges: Canny with its high threshold at the
     edge_pct percentile of the gradient), "auto" picks by how much of the picture is mid grey (a photo has much,
     clean line art almost none)."""
     cv2, np = _cv()
@@ -54,7 +54,11 @@ def line_map(image, mode="auto", threshold=None, edge_pct=94.0, low=0.35):
             _, m = cv2.threshold(g, threshold, 255, cv2.THRESH_BINARY_INV)
         inside = cv2.distanceTransform(m, cv2.DIST_L2, 3)               # px to the paper: peaks on the ink's middle
         peak = cv2.dilate(inside, np.ones((3, 3), np.uint8))
-        centre = ((inside > 0) & (inside >= peak - 0.5)).astype(np.uint8)
+        ridge = (inside > 0) & (inside >= peak - 0.5)
+        # a filled shape (ink thicker than a stroke) has its line on its boundary, not down its middle
+        thick = cv2.dilate((inside > thick_px).astype(np.uint8), np.ones((2 * int(thick_px) + 3,) * 2, np.uint8)) > 0
+        edge = cv2.morphologyEx(m, cv2.MORPH_GRADIENT, np.ones((3, 3), np.uint8)) > 0
+        centre = ((ridge & ~thick) | (edge & thick)).astype(np.uint8)
     elif mode == "photo":
         # the strong edges only: Canny on the picture's own gradient, its high threshold at the edge_pct percentile of
         # the gradient's size, so a dark part on a light ground stays and a floor's grain or a halftone's dots drop out

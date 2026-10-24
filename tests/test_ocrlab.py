@@ -114,3 +114,15 @@ def test_untangle_cuts_a_loop():
     out, cut = L.untangle(bow)
     assert cut >= 1 and L.crossings(out) == 0
     assert abs(L._area(out)) > 90                      # the box stays, the loop goes
+
+
+def test_lines_follow_a_filled_shape():
+    cv2 = pytest.importorskip("cv2")
+    import numpy as np
+    from ocrlab import lines as L
+    img = np.full((200, 300), 255, np.uint8)
+    cv2.ellipse(img, (150, 100), (100, 60), 0, 0, 360, 200, -1)        # a grey fill
+    cv2.ellipse(img, (150, 100), (100, 60), 0, 0, 360, 60, 2)          # its dark outline
+    rough = [(150 + 92 * np.cos(t), 100 + 54 * np.sin(t)) for t in np.linspace(0, 2 * np.pi, 24, endpoint=False)]
+    r = L.follow(img, rough, mode="lines")
+    assert r["fit_after"]["p95_px"] <= 2.0
