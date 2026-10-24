@@ -38,10 +38,11 @@ def _color(image):
     return cv2.cvtColor(a, cv2.COLOR_GRAY2BGR) if a.ndim == 2 else a
 
 
-def line_map(image, mode="auto", threshold=None):
+def line_map(image, mode="auto", threshold=None, edge_pct=94.0, low=0.35):
     """The picture's lines as a cost map (px to the nearest line's middle) and the mode used. mode "lines" (line
-    art: the ridge of the ink, its middle), "photo" (Canny edges on a lightly blurred grey), "auto" picks by how
-    much of the picture is mid grey (a photo has much, clean line art almost none)."""
+    art: the ridge of the ink, its middle), "photo" (the strong edges: Canny with its high threshold at the
+    edge_pct percentile of the gradient), "auto" picks by how much of the picture is mid grey (a photo has much,
+    clean line art almost none)."""
     cv2, np = _cv()
     g = _gray(image)
     if mode == "auto":
@@ -55,9 +56,12 @@ def line_map(image, mode="auto", threshold=None):
         peak = cv2.dilate(inside, np.ones((3, 3), np.uint8))
         centre = ((inside > 0) & (inside >= peak - 0.5)).astype(np.uint8)
     elif mode == "photo":
-        b = cv2.GaussianBlur(g, (5, 5), 1.2)
-        hi, _ = cv2.threshold(b, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        centre = (cv2.Canny(b, 0.4 * hi, hi) > 0).astype(np.uint8)
+        # the strong edges only: Canny on the picture's own gradient, its high threshold at the edge_pct percentile of
+        # the gradient's size, so a dark part on a light ground stays and a floor's grain or a halftone's dots drop out
+        b = cv2.GaussianBlur(g, (0, 0), 1.6)
+        dx, dy = cv2.Sobel(b, cv2.CV_16S, 1, 0), cv2.Sobel(b, cv2.CV_16S, 0, 1)
+        hi = float(np.percentile(np.hypot(dx.astype(np.float32), dy.astype(np.float32)), edge_pct))
+        centre = (cv2.Canny(dx, dy, low * hi, hi, L2gradient=True) > 0).astype(np.uint8)     # a weak edge kept when it joins a strong one
     else:
         raise ValueError("mode is auto, lines or photo")
     cost = cv2.distanceTransform((1 - centre).astype(np.uint8), cv2.DIST_L2, 5)
@@ -89,18 +93,18 @@ def sample(cost, xy):
             + c[y0 + 1, x0 + 1] * fx * fy)
 
 
-def fit(image, outline_px, mode="auto", threshold=None, on_px=1.5, cost=None):
+def fit(image, outline_px, mode="auto", threshold=None, on_px=1.5, cost=None, edge_pct=94.0, low=0.35):
     """How well a closed outline (px) sits on the picture's lines: each point's distance to the nearest line's
     middle, every 1 px along it. The mean, the 95th percentile and the largest miss in px, and the share within on_px."""
     cv2, np = _cv()
     if cost is None:
-        cost, mode = line_map(image, mode, threshold)
+        cost, mode = line_map(image, mode, threshold, edge_pct, low)
     d = sample(cost, dense([tuple(map(float, p)) for p in outline_px], 1.0))
     return {"mode": mode, "mean_px": round(float(d.mean()), 2), "p95_px": round(float(np.percentile(d, 95)), 2),
             "max_px": round(float(d.max()), 2), "on_share": round(float((d <= on_px).mean()), 3)}
 
 
-def _once(cost, rough, radius_px, step_px, smooth):
+def _once(cost, rough, radius_px, step_px, smooth, cap_px=12.0):
     cv2, np = _cv()
     P = dense(rough, step_px)
     n = len(P)
@@ -109,7 +113,9 @@ def _once(cost, rough, radius_px, step_px, smooth):
     N = np.stack([-t[:, 1], t[:, 0]], 1)                         # each point's normal
     offs = np.arange(-radius_px, radius_px + 0.25, 0.5)
     K = len(offs)
-    C = sample(cost, P[:, None, :] + offs[None, :, None] * N[:, None, :]) + 0.02 * np.abs(offs)[None, :]
+    # truncated: beyond cap_px from any line every place costs the same, so where no line is in reach (a faint edge,
+    # an open ground) a point stays where it was read instead of sliding toward a far line
+    C = np.minimum(sample(cost, P[:, None, :] + offs[None, :, None] * N[:, None, :]), cap_px) + 0.05 * np.abs(offs)[None, :]
     pen = smooth * np.abs(offs[:, None] - offs[None, :])           # the price of a neighbour moving differently
 
     def run(start):
@@ -139,25 +145,28 @@ def _once(cost, rough, radius_px, step_px, smooth):
 
 
 def follow(image, rough_px, radius_px=16, step_px=2, eps_px=0.5, smooth=0.6, passes=2, fine_px=6, mode="auto",
-           threshold=None, picture=None, label=None):
+           threshold=None, picture=None, label=None, edge_pct=94.0, low=0.35, cap_px=12.0):
     """A rough closed outline (px) laid onto the picture's lines as one line. Points step_px apart each move only
     along their own normal (up to radius_px, in 0.5 px steps); the moves are chosen together so every point lands on
-    a line's middle while neighbours move alike (smooth: the price of 1 px of difference). Later passes start from
-    the last result and search fine_px. Gives the outline, its fit before and after, and, with picture (a path), the
+    a line's middle while neighbours move alike (smooth: the price of 1 px of difference); a place more than cap_px
+    from any line costs no more than cap_px, so a stretch with no line in reach stays as read. Later passes start
+    from the last result and search fine_px. Gives the outline, its fit before and after, and, with picture (a path), the
     picture: the rough outline grey, the result green where within 1.5 px of a line and red where not."""
     cv2, np = _cv()
-    cost, mode = line_map(image, mode, threshold)
+    cost, mode = line_map(image, mode, threshold, edge_pct, low)
     rough = [tuple(map(float, p)) for p in rough_px]
     if len(rough) < 3:
         raise ValueError("an outline needs at least 3 points")
     Q = None
     for _ in range(max(1, passes)):
-        Q = _once(cost, rough if Q is None else [tuple(q) for q in Q], radius_px if Q is None else fine_px, step_px, smooth)
+        Q = _once(cost, rough if Q is None else [tuple(q) for q in Q], radius_px if Q is None else fine_px, step_px, smooth, cap_px)
     poly = cv2.approxPolyDP(Q.astype(np.float32).reshape(-1, 1, 2), eps_px, True)[:, 0, :]
     poly = [[round(float(x), 2), round(float(y), 2)] for x, y in poly]
     out = {"outline_px": poly, "points": len(poly), "mode": mode, "passes": passes,
            "area_px": float(abs(cv2.contourArea(Q.astype(np.float32)))),
            "fit_before": fit(image, rough, cost=cost), "fit_after": fit(image, poly, cost=cost)}
+    a0 = abs(cv2.contourArea(np.asarray(rough, dtype=np.float32)))
+    out["area_change"] = round(out["area_px"] / a0 - 1.0, 3) if a0 else None    # a large change: the outline collapsed or ran off
     out["fit_before"]["mode"] = out["fit_after"]["mode"] = mode
     if picture:
         img = _color(image)
