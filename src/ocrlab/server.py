@@ -93,6 +93,16 @@ def line_follow(path: str, outline: Annotated[list[list[float]], Field(descripti
     return _err(L.follow, path, outline, radius_px=radius_px, smooth=smooth, mode=mode, picture=picture)
 
 
+# The cut (2026-11-01): 8 tools become 3 action tools; the functions above stay as they are.
+from .actions import add_action_tool  # noqa: E402
+
+for _old in ['pdf_info', 'read_page', 'read_pages', 'find', 'words_in', 'read_image', 'line_fit', 'line_follow']:
+    mcp.remove_tool(_old)
+add_action_tool(mcp, "ocr_read", "Read PDFs and pages: file info, one page, many pages.", {"pdf_info": pdf_info, "read_page": read_page, "read_pages": read_pages})
+add_action_tool(mcp, "ocr_find", "Find text: search, words in a box, read an image.", {"find": find, "words_in": words_in, "read_image": read_image})
+add_action_tool(mcp, "ocr_line", "Line art: fit an outline, follow a line.", {"line_fit": line_fit, "line_follow": line_follow})
+
+
 def main():
     mcp.run()
 
